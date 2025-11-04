@@ -1716,8 +1716,9 @@ async function playIntroCinematic(){
     cameraFocusOnCell(boss.r, boss.c, {scale: zoom, hold:0});
     await sleep(420);
   }
-  await showIntroLine('Velmira：呵呵呵...又来新玩具了～');
-  await showIntroLine('Velmira：来陪我玩玩吧！这很好玩啊～');
+  await showIntroLine('Velmira是赫雷西邪教里最癫狂也是最危险的一个干部。');
+  await showIntroLine('还未成年的他给你的压迫感远远超越其他比这孩子高大无数倍的邪教成员们无数倍。');
+  await showIntroLine('你现在绝对打不过他，但是有一种感觉让你觉得你不必打败他。');
   hideIntroDialog();
   cameraReset();
   await sleep(520);
@@ -1980,8 +1981,15 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
     setInteractionLocked(true);
     setTimeout(async ()=>{
       appendLog('战斗剧情触发！Velmira HP 降至 650！');
-      await showIntroLine('Velmira：哈...哈哈...好痛啊...但是...这感觉...');
-      await showIntroLine('Velmira：真是太棒了！我还想再玩一次～');
+      await showIntroLine('Velmira：原来只有这么些能耐吗～');
+      await showIntroLine('Velmira：我说实话');
+      await showIntroLine('Velmira：我很失望');
+      await showIntroLine('Velmira：现在该结束了');
+      await showIntroLine('（Velmira突然暴起，看起来开始用全力了）');
+      await showIntroLine('（但是就在这时，呜呜泱泱的警员涌入了现场让Velmira一愣）');
+      await showIntroLine('Velmira：啧，今天先放你们一马！');
+      await showIntroLine('Velmira：哦对了，那个戴帽子的，你很可爱哦～');
+      await showIntroLine('（Velmira消失了）');
       hideIntroDialog();
       await sleep(1000);
       appendLog('========================================');
