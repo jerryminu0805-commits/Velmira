@@ -1986,7 +1986,6 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
       await showIntroLine('Velmira：现在该结束了');
       await showIntroLine('（Velmira突然暴起，看起来开始用全力了）');
       await showIntroLine('（但是就在这时，呜呜泱泱的警员涌入了现场让Velmira一愣）');
-      await showIntroLine('（Velmira突然暴起，看起来开始用全力了）');
       await showIntroLine('（Velmira：啧，今天先放你们一马！');
       await showIntroLine('Velmira：哦对了，那个戴帽子的，你很可爱哦～');
       await showIntroLine('（Velmira消失了）');
