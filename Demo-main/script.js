@@ -3721,7 +3721,7 @@ async function exhaustEnemySteps(){
     // 整轮无人动作 → 强行消步直到 0（防止卡住）
     if(!progressedThisRound){
       // 尝试对一个可移动单位强制朝集合点靠拢
-      const anyMovable = enemyLivingEnemies().find(e=> canUnitMove(e) && neighborsOf(e, e.r, e.c).some(p=>!getUnitAt(p.r,p.c)));
+      const anyMovable = enemyLivingEnemies().find(e=> !e.status.stunned && canUnitMove(e) && neighborsOf(e, e.r, e.c).some(p=>!getUnitAt(p.r,p.c)));
       if(anyMovable){
         const rally = computeRallyPoint();
         const mv = tryStepsToward(anyMovable, rally);
