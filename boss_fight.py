@@ -229,8 +229,9 @@ def main():
     """
     Main entry point for the Velmira Boss Fight System.
     
-    This function initializes and displays information about the boss fight scenario.
-    It loads the scenario data from the JSON file and prepares the battle system.
+    This function initializes a BossFight instance (which loads the scenario data
+    from 'abandoned_animals_pt1.json') and displays information about the boss
+    fight scenario including the boss and player units.
     
     Returns:
         int: Exit code (0 for success, 1 for error)
