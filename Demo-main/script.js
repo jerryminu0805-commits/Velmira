@@ -1988,7 +1988,6 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
       appendLog('战斗结束！Velmira 体力达到阈值！');
       appendLog('========================================');
       showAccomplish();
-      setInteractionLocked(true);
     }, 800);
   }
 
