@@ -3878,7 +3878,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   window.addEventListener('load', ()=> refreshLargeOverlays());
 
   appendLog('被遗弃的动物（上）：地图 15x11，两个3x3掩体。');
-  appendLog('Velmira 需叠满3层眩晕才会进入眩晕状态，HP降至450触发剧情。');
+  appendLog('Velmira 需叠满3层眩晕才会进入眩晕状态，HP降至650触发剧情。');
   appendLog('流血会在回合开始时减少目标 5% HP，Velmira 的每次攻击都会施加流血。');
 
   const endTurnBtn=document.getElementById('endTurnBtn');
