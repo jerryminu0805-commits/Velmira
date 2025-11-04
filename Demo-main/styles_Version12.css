@@ -129,6 +129,16 @@ body {
 .unit.player { background: rgba(91,140,255,0.08); border: 1px solid rgba(91,140,255,0.3); }
 .unit.enemy  { background: rgba(255,77,79,0.08); border: 1px solid rgba(255,77,79,0.3); }
 
+/* Unit name styling to prevent overflow */
+.unit .unit-name {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
 .hpbar, .spbar { width: 90%; height: 10px; background: #0e121b; border-radius: 99px; overflow: hidden; border: 1px solid #1c2334; margin: 2px 0; }
 .hpfill { height: 100%; background: linear-gradient(90deg, #ff7875, #ff4d4f); }
 .spfill { height: 100%; background: linear-gradient(90deg, #36cfc9, #13c2c2); }
@@ -201,7 +211,15 @@ body {
   background: rgba(91,140,255,0.08);
   border-color: rgba(91,140,255,0.35);
 }
-.largeOverlay .title { font-weight: 600; }
+.largeOverlay .title { 
+  font-weight: 600;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  text-align: center;
+}
 .largeOverlay .hpbar, .largeOverlay .spbar { width: 88%; }
 
 .cameraControls {

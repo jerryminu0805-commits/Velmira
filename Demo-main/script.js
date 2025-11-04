@@ -2824,7 +2824,7 @@ function placeUnits(){
     const hpPct = Math.max(0, Math.min(100, (u.hp/u.maxHp*100)||0));
     const spDisplay = getSpBarDisplay(u);
     div.innerHTML = `
-      <div>${u.name}</div>
+      <div class="unit-name" title="${u.name}">${u.name}</div>
       <div class="hpbar"><div class="hpfill" style="width:${hpPct}%"></div></div>
       <div class="spbar"><div class="spfill" style="width:${spDisplay.spPct}%; background:${spDisplay.color}"></div></div>
     `;
@@ -2883,7 +2883,7 @@ function renderLargeUnitOverlay(u){
   const spDisplay = getSpBarDisplay(u);
 
   overlay.innerHTML = `
-    <div class="title">${u.name}</div>
+    <div class="title" title="${u.name}">${u.name}</div>
     <div class="hpbar"><div class="hpfill" style="width:${hpPct}%"></div></div>
     <div class="spbar"><div class="spfill" style="width:${spDisplay.spPct}%; background:${spDisplay.color}"></div></div>
   `;
