@@ -19,7 +19,7 @@ const MAX_STEPS = 10;
 const BASE_START_STEPS = 3;
 const SKILLPOOL_MAX = 13;
 const START_HAND_COUNT = 3;
-const VELMIRA_SP_THRESHOLD = 450;
+const VELMIRA_SP_THRESHOLD = 650;
 
 const ENEMY_IS_AI_CONTROLLED = true;
 const ENEMY_WINDUP_MS = 850;
@@ -186,12 +186,12 @@ function createUnit(id, name, side, level, r, c, maxHp, maxSp, restoreOnZeroPct,
 }
 const units = {};
 // 玩家 - 被遗弃的动物（上）
-units['karma'] = createUnit('karma','Karma','player',25, 7, 2, 200,50, 0.5,20, ['violentAddiction','toughBody','pride']);
-units['adora'] = createUnit('adora','Adora','player',25, 8, 2, 100,100, 0.5,0, ['backstab','calmAnalysis','proximityHeal','fearBuff']);
-units['dario'] = createUnit('dario','Dario','player',25, 9, 2, 150,100, 0.75,0, ['quickAdjust','counter','moraleBoost']);
+units['karma'] = createUnit('karma','Karma','player',25, 10, 9, 200,50, 0.5,20, ['violentAddiction','toughBody','pride']);
+units['adora'] = createUnit('adora','Adora','player',25, 10, 8, 100,100, 0.5,0, ['backstab','calmAnalysis','proximityHeal','fearBuff']);
+units['dario'] = createUnit('dario','Dario','player',25, 10, 7, 150,100, 0.75,0, ['quickAdjust','counter','moraleBoost']);
 
 // 被遗弃的动物（上）Boss
-units['velmira'] = createUnit('velmira','Velmira/佛尔魔拉','enemy',50, 8, 10, 750, 70, 1.0, 0, ['velmiraBloodlust','velmiraBloodyShovel','velmiraSpecialPerson','velmiraAbandoned','velmiraWeakPrey'], {
+units['velmira'] = createUnit('velmira','Velmira/佛尔魔拉','enemy',50, 2, 8, 750, 70, 1.0, 0, ['velmiraBloodlust','velmiraBloodyShovel','velmiraSpecialPerson','velmiraAbandoned','velmiraWeakPrey'], {
   size:1,
   stunThreshold:3,
   spFloor:0,
@@ -1975,11 +1975,11 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
 
   handleSpCrashIfNeeded(u);
   // Check Velmira HP threshold for battle end
-  if(u.id==='velmira' && u.hp <= 450 && u.hp > 0 && !u._thresholdTriggered){
+  if(u.id==='velmira' && u.hp <= 650 && u.hp > 0 && !u._thresholdTriggered){
     u._thresholdTriggered = true;
     setInteractionLocked(true);
     setTimeout(async ()=>{
-      appendLog('战斗剧情触发！Velmira HP 降至 450！');
+      appendLog('战斗剧情触发！Velmira HP 降至 650！');
       await showIntroLine('Velmira：哈...哈哈...好痛啊...但是...这感觉...');
       await showIntroLine('Velmira：真是太棒了！我还想再玩一次～');
       hideIntroDialog();
@@ -1987,6 +1987,7 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
       appendLog('========================================');
       appendLog('战斗结束！Velmira 体力达到阈值！');
       appendLog('========================================');
+      showAccomplish();
       setInteractionLocked(true);
     }, 800);
   }
@@ -2115,12 +2116,15 @@ function darioSwiftMove(u, payload){
   }
   unitActed(u);
 }
-function darioPull(u, targetOrDesc){
+async function darioPull(u, targetOrDesc){
   let target = null, usedDir = null;
   if(targetOrDesc && targetOrDesc.id){ target = targetOrDesc; usedDir = cardinalDirFromDelta(target.r - u.r, target.c - u.c); }
   else if(targetOrDesc && targetOrDesc.dir){ usedDir = targetOrDesc.dir; const line = forwardLineAt(u, usedDir); for(const cell of line){ const tu=getUnitAt(cell.r,cell.c); if(tu && tu.hp>0 && tu.side!==u.side){ target=tu; break; } } }
-  if(!target){ appendLog('拿来吧你！ 未找到可拉拽目标'); return; }
+  if(!target){ appendLog('拿来吧你！ 未找到可拉拽目标'); unitActed(u); return; }
+  
+  await telegraphThenImpact([{r:target.r,c:target.c}]);
   cameraFocusOnCell(target.r, target.c);
+  
   if(target.pullImmune){ appendLog(`${target.name} 免疫拉扯（小Boss/Boss），改为冲击效果`); }
   else {
     let placement = null;
@@ -2313,7 +2317,7 @@ async function velmira_Play(u){
   appendLog(`${u.name} 获得 1 层灵活buff`);
   unitActed(u);
 }
-// 抓到你啦！ (2步) - 多阶段：命中面前一排第一个目标造成15HP，拉到面前一格，压倒造成25HP+10SP+1层恐惧
+// 抓到你啦！ (2步) - 多阶段：命中面前一排第一个目标造成15HP，自己移动到目标前一格，压倒造成25HP+10SP+1层恐惧
 async function velmira_CaughtYou(u, dir){
   const line = forwardLineAt(u, dir);
   if(line.length===0){ appendLog('抓到你啦！：前方没有目标'); unitActed(u); return; }
@@ -2336,17 +2340,29 @@ async function velmira_CaughtYou(u, dir){
   damageUnit(target.id,15,0,`${u.name} 抓到你啦！·抓取 命中 ${target.name}`, u.id,{skillFx:'velmira:抓到你啦！'});
   u.dmgDone += 15;
   
-  // Pull target to front of Velmira (if not immune)
-  if(!target.pullImmune){
-    const adj = range_adjacent(u);
-    if(adj.length>0){
-      const pullCell = adj.find(c=> c.dir===dir) || adj[0];
-      if(!getUnitAt(pullCell.r, pullCell.c)){
-        target.r = pullCell.r;
-        target.c = pullCell.c;
-        appendLog(`${target.name} 被拉到 ${u.name} 面前`);
-      }
+  // Move self to one cell in front of target
+  const targetAdj = range_adjacent(target);
+  let moveCell = null;
+  // Find the cell adjacent to target in the direction from self to target
+  for(const cell of targetAdj){
+    const dirToTarget = cardinalDirFromDelta(target.r - cell.r, target.c - cell.c);
+    if(dirToTarget === dir && !getUnitAt(cell.r, cell.c)){
+      moveCell = cell;
+      break;
     }
+  }
+  // If no ideal cell, find any empty adjacent cell
+  if(!moveCell){
+    moveCell = targetAdj.find(c=> !getUnitAt(c.r, c.c));
+  }
+  
+  if(moveCell){
+    const oldR = u.r, oldC = u.c;
+    u.r = moveCell.r;
+    u.c = moveCell.c;
+    showTrail(oldR, oldC, u.r, u.c);
+    appendLog(`${u.name} 移动到 ${target.name} 面前 (${u.r},${u.c})`);
+    pulseCell(u.r, u.c);
   }
   
   await stageMark([{r:target.r,c:target.c}]);
@@ -3236,8 +3252,8 @@ function applyLevelSuppression(){
   const playerAvg = avg(Object.values(units).filter(u=>u.side==='player' && u.hp>0));
   const enemyAvg  = avg(Object.values(units).filter(u=>u.side==='enemy' && u.hp>0));
   if(playerAvg===null||enemyAvg===null) return;
-  if(playerAvg>enemyAvg){ const add=Math.floor((playerAvg-enemyAvg)/5); if(add>0){ playerSteps += add; appendLog(`等级压制：玩家 +${add} 步`); } }
-  else if(enemyAvg>playerAvg){ const add=Math.floor((enemyAvg-playerAvg)/5); if(add>0){ enemySteps += add; appendLog(`敌方 +${add} 步（等级压制）`); } }
+  if(playerAvg>enemyAvg){ playerSteps += 2; appendLog(`等级压制：玩家 +2 步`); }
+  else if(enemyAvg>playerAvg){ enemySteps += 2; appendLog(`敌方 +2 步（等级压制）`); }
   updateStepsUI();
 }
 function processUnitsTurnStart(side){
