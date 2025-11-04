@@ -1,4 +1,4 @@
-// 2D 回合制 RPG Demo - 疲惫的极限
+// 2D 回合制 RPG Demo - 被遗弃的动物（上）
 // 变更摘要：
 // - 重制敌方阵容：移除七海小队，改为 Khathia 的单体 Boss 战与 10x20 新地图。
 // - Khathia：实现“老干部”“变态躯体”“疲劳的躯体”“糟糕的初始设计”等被动与六种招式。
@@ -1974,6 +1974,22 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
   }
 
   handleSpCrashIfNeeded(u);
+  // Check Velmira HP threshold for battle end
+  if(u.id==='velmira' && u.hp <= 450 && u.hp > 0 && !u._thresholdTriggered){
+    u._thresholdTriggered = true;
+    setInteractionLocked(true);
+    setTimeout(async ()=>{
+      appendLog('战斗剧情触发！Velmira HP 降至 450！');
+      await showIntroLine('Velmira：哈...哈哈...好痛啊...但是...这感觉...');
+      await showIntroLine('Velmira：真是太棒了！我还想再玩一次～');
+      hideIntroDialog();
+      await sleep(1000);
+      appendLog('========================================');
+      appendLog('战斗结束！Velmira 体力达到阈值！');
+      appendLog('========================================');
+      setInteractionLocked(true);
+    }, 800);
+  }
 
   renderAll();
 }
@@ -2937,7 +2953,7 @@ function renderStatus(){
     el.innerHTML=`<strong>${u.name}</strong> HP:${u.hp}/${u.maxHp} SP:${u.sp}/${u.maxSp} ${summarizeNegatives(u)}`;
     partyStatus.appendChild(el);
   }
-  const enemyWrap=document.createElement('div'); enemyWrap.style.marginTop='10px'; enemyWrap.innerHTML='<strong>敌方（疲惫的极限）</strong>';
+  const enemyWrap=document.createElement('div'); enemyWrap.style.marginTop='10px'; enemyWrap.innerHTML='<strong>敌方（被遗弃的动物（上））</strong>';
   const enemyUnits = Object.values(units).filter(u=>u.side==='enemy' && u.hp>0);
   for(const u of enemyUnits){
     const el=document.createElement('div'); el.className='partyRow small';
@@ -3651,7 +3667,6 @@ async function exhaustEnemySteps(){
       // 1) 尝试技能
       let didAct = false;
       const candidates = buildSkillCandidates(en);
-      }
       if(candidates.length>0){
         didAct = await execEnemySkillCandidate(en, candidates[0]);
         if(didAct){
@@ -3846,8 +3861,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
   window.addEventListener('load', ()=> refreshLargeOverlays());
 
-  appendLog('疲惫的极限：地图 10x20，全场无额外掩体。');
-  appendLog('Khathia 需叠满4层眩晕才会进入眩晕状态，SP 崩溃将触发特殊疲劳崩溃。');
+  appendLog('被遗弃的动物（上）：地图 10x20，全场无额外掩体。');
+  appendLog('Velmira 需叠满3层眩晕才会进入眩晕状态，HP降至450触发剧情。');
   appendLog('怨念会在回合开始时吞噬目标的 5% SP，记得及时清除。');
 
   const endTurnBtn=document.getElementById('endTurnBtn');
