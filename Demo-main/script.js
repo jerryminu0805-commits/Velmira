@@ -19,7 +19,7 @@ const MAX_STEPS = 10;
 const BASE_START_STEPS = 3;
 const SKILLPOOL_MAX = 13;
 const START_HAND_COUNT = 3;
-const VELMIRA_SP_THRESHOLD = 650;
+const VELMIRA_HP_THRESHOLD = 550;
 
 const ENEMY_IS_AI_CONTROLLED = true;
 const ENEMY_WINDUP_MS = 850;
@@ -193,7 +193,7 @@ units['dario'] = createUnit('dario','Dario','player',25, 10, 7, 150,100, 0.75,0,
 // 被遗弃的动物（上）Boss
 units['velmira'] = createUnit('velmira','Velmira/佛尔魔拉','enemy',50, 2, 8, 750, 70, 1.0, 0, ['velmiraBloodlust','velmiraBloodyShovel','velmiraSpecialPerson','velmiraAbandoned','velmiraWeakPrey'], {
   size:1,
-  stunThreshold:3,
+  stunThreshold:4,
   spFloor:0,
   disableSpCrash:false,
   initialSp:70,
@@ -1976,18 +1976,18 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
 
   handleSpCrashIfNeeded(u);
   // Check Velmira HP threshold for battle end
-  if(u.id==='velmira' && u.hp <= 650 && u.hp > 0 && !u._thresholdTriggered){
+  if(u.id==='velmira' && u.hp <= 550 && u.hp > 0 && !u._thresholdTriggered){
     u._thresholdTriggered = true;
     setInteractionLocked(true);
     setTimeout(async ()=>{
-      appendLog('战斗剧情触发！Velmira HP 降至 650！');
+      appendLog('战斗剧情触发！Velmira HP 降至 550！');
       await showIntroLine('Velmira：原来只有这么些能耐吗～');
-      await showIntroLine('Velmira：我说实话');
-      await showIntroLine('Velmira：我很失望');
+      await showIntroLine('Velmira：我说实话，我很失望');
       await showIntroLine('Velmira：现在该结束了');
       await showIntroLine('（Velmira突然暴起，看起来开始用全力了）');
       await showIntroLine('（但是就在这时，呜呜泱泱的警员涌入了现场让Velmira一愣）');
-      await showIntroLine('Velmira：啧，今天先放你们一马！');
+      await showIntroLine('（Velmira突然暴起，看起来开始用全力了）');
+      await showIntroLine('（Velmira：啧，今天先放你们一马！');
       await showIntroLine('Velmira：哦对了，那个戴帽子的，你很可爱哦～');
       await showIntroLine('（Velmira消失了）');
       hideIntroDialog();
@@ -3885,7 +3885,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   window.addEventListener('load', ()=> refreshLargeOverlays());
 
   appendLog('被遗弃的动物（上）：地图 15x11，两个3x3掩体。');
-  appendLog('Velmira 需叠满3层眩晕才会进入眩晕状态，HP降至650触发剧情。');
+  appendLog('Velmira 需叠满4层眩晕才会进入眩晕状态，HP降至550触发剧情。');
   appendLog('流血会在回合开始时减少目标 5% HP，Velmira 的每次攻击都会施加流血。');
 
   const endTurnBtn=document.getElementById('endTurnBtn');
