@@ -10,6 +10,9 @@ from typing import Dict, List, Tuple, Optional
 from enum import Enum
 
 
+__all__ = ['BuffType', 'Unit', 'BossFight', 'main']
+
+
 class BuffType(Enum):
     """Types of buffs and debuffs"""
     BLEEDING = "bleeding"
@@ -223,7 +226,16 @@ class BossFight:
 
 
 def main():
-    """Main entry point"""
+    """
+    Main entry point for the Velmira Boss Fight System.
+    
+    This function initializes a BossFight instance (which loads the scenario data
+    from 'abandoned_animals_pt1.json') and displays information about the boss
+    fight scenario including the boss and player units.
+    
+    Returns:
+        int: Exit code (0 for success, 1 for error)
+    """
     print("Velmira Boss Fight System")
     print("=" * 50)
     
@@ -238,11 +250,16 @@ def main():
         print("\n战斗系统已准备就绪!")
         print(f"胜利条件: 将{fight.boss.name}的HP降至{fight.victory_hp_threshold}")
         
+        return 0
+        
     except FileNotFoundError:
         print("错误: 找不到场景文件 'abandoned_animals_pt1.json'")
+        return 1
     except Exception as e:
         print(f"错误: {e}")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.exit(main())
