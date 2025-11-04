@@ -1,4 +1,4 @@
-// 2D 回合制 RPG Demo - 疲惫的极限
+// 2D 回合制 RPG Demo - 被遗弃的动物（上）
 // 变更摘要：
 // - 重制敌方阵容：移除七海小队，改为 Khathia 的单体 Boss 战与 10x20 新地图。
 // - Khathia：实现“老干部”“变态躯体”“疲劳的躯体”“糟糕的初始设计”等被动与六种招式。
@@ -6,8 +6,8 @@
 // - SP 系统：支持单位自定义 SP 下限以及禁用通用崩溃，新增疲劳崩溃逻辑。
 // - AI 调整：Khathia 达到移动上限却仍无法攻击时触发全场 -10 SP 惩罚；保留 BFS+兜底消步机制。
 
-let ROWS = 10;
-let COLS = 20;
+let ROWS = 11;
+let COLS = 15;
 
 const CELL_SIZE = 56;
 const GRID_GAP = 6;
@@ -19,7 +19,7 @@ const MAX_STEPS = 10;
 const BASE_START_STEPS = 3;
 const SKILLPOOL_MAX = 13;
 const START_HAND_COUNT = 3;
-const KHATHIA_FATIGUE_STUN_DURATION = 3;
+const VELMIRA_SP_THRESHOLD = 450;
 
 const ENEMY_IS_AI_CONTROLLED = true;
 const ENEMY_WINDUP_MS = 850;
@@ -145,6 +145,9 @@ function createUnit(id, name, side, level, r, c, maxHp, maxSp, restoreOnZeroPct,
       jixueStacks: 0,            // “鸡血”Buff 层数（下一次攻击伤害x2）
       dependStacks: 0,           // “依赖”Buff 层数（下一次攻击真实伤害，结算后清空自身SP）
       resentStacks: 0,           // “怨念”层数（每回合-5%SP）
+      agileStacks: 0,            // "灵活"Buff 层数（让敌方30%几率miss，miss消耗一层）
+      mockeryStacks: 0,          // "戏谑"Buff 层数（打到人给自己2层灵活+1层暴力）
+      violenceStacks: 0,         // "暴力"Buff 层数（下次攻击双倍伤害但消耗10sp）
     },
     dmgDone: 0,
     skillPool: [],
@@ -182,19 +185,18 @@ function createUnit(id, name, side, level, r, c, maxHp, maxSp, restoreOnZeroPct,
   };
 }
 const units = {};
-// 玩家
-units['adora'] = createUnit('adora','Adora','player',52, 4, 2, 100,100, 0.5,0, ['backstab','calmAnalysis','proximityHeal','fearBuff']);
-units['dario'] = createUnit('dario','Dario','player',52, 2, 2, 150,100, 0.75,0, ['quickAdjust','counter','moraleBoost']);
-units['karma'] = createUnit('karma','Karma','player',52, 6, 2, 200,50, 0.5,20, ['violentAddiction','toughBody','pride']);
+// 玩家 - 被遗弃的动物（上）
+units['karma'] = createUnit('karma','Karma','player',25, 7, 2, 200,50, 0.5,20, ['violentAddiction','toughBody','pride']);
+units['adora'] = createUnit('adora','Adora','player',25, 8, 2, 100,100, 0.5,0, ['backstab','calmAnalysis','proximityHeal','fearBuff']);
+units['dario'] = createUnit('dario','Dario','player',25, 9, 2, 150,100, 0.75,0, ['quickAdjust','counter','moraleBoost']);
 
-// 疲惫的极限 Boss
-units['khathia'] = createUnit('khathia','Khathia','enemy',35, 4, 19, 700, 0, 0, 0, ['khathiaVeteran','khathiaTwisted','khathiaFatigue','khathiaDesign'], {
-  size:2,
-  stunThreshold:4,
-  spFloor:-100,
-  disableSpCrash:true,
-  maxMovePerTurn:3,
-  initialSp:0,
+// 被遗弃的动物（上）Boss
+units['velmira'] = createUnit('velmira','Velmira/佛尔魔拉','enemy',50, 8, 10, 750, 70, 1.0, 0, ['velmiraBloodlust','velmiraBloodyShovel','velmiraSpecialPerson','velmiraAbandoned','velmiraWeakPrey'], {
+  size:1,
+  stunThreshold:3,
+  spFloor:0,
+  disableSpCrash:false,
+  initialSp:70,
   pullImmune:true,
 });
 
@@ -1673,7 +1675,7 @@ function ensureIntroDialog(){
     box.className = 'box';
     const speaker = document.createElement('div');
     speaker.className = 'speaker';
-    speaker.textContent = 'Khathia';
+    speaker.textContent = 'Velmira';
     box.appendChild(speaker);
     const content = document.createElement('div');
     content.className = 'content';
@@ -1708,14 +1710,14 @@ async function playIntroCinematic(){
   setInteractionLocked(true);
   cameraReset({immediate:true});
   await sleep(260);
-  const boss = units['khathia'];
+  const boss = units['velmira'];
   if(boss && boss.hp>0){
     const zoom = clampValue(cameraState.baseScale * 1.3, cameraState.minScale, cameraState.maxScale);
     cameraFocusOnCell(boss.r, boss.c, {scale: zoom, hold:0});
     await sleep(420);
   }
-  await showIntroLine('Khathia：疲惫不是理由，老干部依旧站在这里。');
-  await showIntroLine('Khathia：让我看看你们能撑过几轮。');
+  await showIntroLine('Velmira：呵呵呵...又来新玩具了～');
+  await showIntroLine('Velmira：来陪我玩玩吧！这很好玩啊～');
   hideIntroDialog();
   cameraReset();
   await sleep(520);
@@ -1783,54 +1785,6 @@ function handleSpCrashIfNeeded(u){
   }
 }
 
-function checkKhathiaFatigue(u){
-  if(!u || u.id!=='khathia' || u.hp<=0) return;
-  if(u._fatigueCrashLock) return;
-  if(u.sp <= -100){
-    u._fatigueCrashLock = true;
-    appendLog(`${u.name} 的“疲劳的躯体”崩溃：SP 跌至 -100`);
-    damageUnit(u.id, 50, 0, `${u.name} 疲劳崩溃`, u.id, {trueDamage:true, ignoreToughBody:true, skillFx:'khathia:疲劳崩溃'});
-    // Apply stun Buff instead of 1 layer
-    const appliedStunDuration = Math.max(u.status.stunned || 0, KHATHIA_FATIGUE_STUN_DURATION);
-    updateStatusStacks(u, 'stunned', appliedStunDuration, {label:'眩晕', type:'debuff'});
-    appendLog(`${u.name} 因疲劳崩溃，陷入眩晕 Buff（${appliedStunDuration} 回合）`);
-    if(u.side==='enemy'){
-      enemySteps = Math.max(0, enemySteps - 1);
-      appendLog('疲劳崩溃：敌方额外 -1 步');
-      updateStepsUI();
-    } else {
-      playerSteps = Math.max(0, playerSteps - 1);
-      appendLog('疲劳崩溃：我方额外 -1 步');
-      updateStepsUI();
-    }
-    u.sp = -25;
-    u._fatigueCrashLock = false;
-  }
-}
-
-function applyKhathiaDesignPenalty(){
-  appendLog('糟糕的初始设计触发：所有单位 SP -10');
-  for(const u of Object.values(units)){
-    if(!u || u.hp<=0) continue;
-    applySpDamage(u, 10, {reason:`${u.name} 被设计缺陷拖累：SP -{delta}`});
-  }
-}
-function applySpDamage(targetOrId, amount, {sourceId=null, reason=null}={}){
-  const u = typeof targetOrId === 'string' ? units[targetOrId] : targetOrId;
-  if(!u || u.hp<=0 || amount<=0) return 0;
-  const before = u.sp;
-  const floor = (typeof u.spFloor === 'number') ? u.spFloor : 0;
-  u.sp = Math.max(floor, u.sp - amount);
-  const delta = before - u.sp;
-  if(delta>0){
-    showDamageFloat(u,0,delta);
-    if(reason){ appendLog(reason.replace('{delta}', String(delta))); }
-    handleSpCrashIfNeeded(u);
-    checkKhathiaFatigue(u);
-    renderAll();
-  }
-  return delta;
-}
 
 // —— 伤害计算 —— 
 function backstabMultiplier(attacker,target){
@@ -1856,6 +1810,23 @@ function calcOutgoingDamage(attacker, baseDmg, target, skillName){
   if(hasDeepBreathPassive(attacker)){
     dmg = Math.round(dmg * 1.10);
   }
+  // Velmira 被动：热血上头 - 75%几率增加75%伤害
+  if(attacker.passives.includes('velmiraBloodlust') && Math.random() < 0.75){
+    dmg = Math.round(dmg * 1.75);
+    appendLog(`${attacker.name} 的"热血上头"触发：伤害 x1.75`);
+  }
+  // Velmira 被动：弱肉强食 - 根据目标流血层数增加伤害（每层+10%）
+  if(attacker.passives.includes('velmiraWeakPrey') && target && target.status && target.status.bleed > 0){
+    const bleedBonus = 1 + (target.status.bleed * 0.10);
+    dmg = Math.round(dmg * bleedBonus);
+    appendLog(`${attacker.name} 的"弱肉强食"触发：因流血x${target.status.bleed}增加伤害`);
+  }
+  // Velmira 被动：暴力Buff - 首段攻击双倍伤害
+  if(attacker.status && attacker.status.violenceStacks > 0 && !attacker._violenceActivated){
+    dmg = Math.round(dmg * 2);
+    attacker._violenceActivated = true;
+    appendLog(`${attacker.name} 的"暴力"触发：伤害 x2`);
+  }
   return dmg;
 }
 function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
@@ -1871,6 +1842,15 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
   }
 
   if(source){
+    // 灵活Buff - 30%几率miss攻击
+    if(!opts.ignoreMiss && u.status && u.status.agileStacks > 0 && Math.random() < 0.30){
+      appendLog(`${u.name} 的"灵活"触发：${source.name} 的攻击Miss！`);
+      updateStatusStacks(u,'agileStacks', Math.max(0, u.status.agileStacks - 1), {label:'灵活', type:'buff'});
+      showStatusFloat(u,'Miss',{type:'buff', offsetY:-48});
+      pulseCell(u.r,u.c);
+      renderAll();
+      return;
+    }
     if(source.side === u.side){ appendLog(`友伤无效：${source.name} -> ${u.name}`); return; }
 
     if(!opts.ignoreJixue && buffStage==='final' && source.status && source.status.jixueStacks>0){
@@ -1902,16 +1882,10 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
     hpDmg = Math.round(hpDmg * (1 - u._stanceDmgRed));
     spDmg = Math.round(spDmg * (1 - u._stanceDmgRed));
   }
-  if(!trueDamage && u.id==='khathia'){
-    if(Math.random() < 0.15){
-      appendLog(`${u.name} 的“变态躯体”发动：完全免疫本次伤害`);
-      showStatusFloat(u,'免疫',{type:'buff', offsetY:-48});
-      pulseCell(u.r,u.c);
-      renderAll();
-      return;
-    }
-    hpDmg = Math.round(hpDmg * 0.75);
-    spDmg = Math.round(spDmg * 0.75);
+  // Velmira 被动：特别的人 - 对Adora的伤害减少20%
+  if(!trueDamage && u.passives.includes('velmiraSpecialPerson') && source && source.id==='adora'){
+    hpDmg = Math.round(hpDmg * 0.80);
+    spDmg = Math.round(spDmg * 0.80);
   }
   if(!trueDamage && u.passives.includes('toughBody') && !opts.ignoreToughBody){
     hpDmg = Math.round(hpDmg * 0.75);
@@ -1930,7 +1904,7 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
   u.hp = Math.max(0, u.hp - finalHp);
   const floor = (typeof u.spFloor === 'number') ? u.spFloor : 0;
   u.sp = Math.max(floor, u.sp - finalSp);
-  checkKhathiaFatigue(u);
+  
   const died = prevHp > 0 && u.hp <= 0;
 
   const totalImpact = finalHp + finalSp;
@@ -1967,21 +1941,55 @@ function damageUnit(id, hpDmg, spDmg, reason, sourceId=null, opts={}){
     }
   }
 
+  // Velmira 被动：嗜血魔铲 - 每次攻击自动给敌人上一层流血效果
   if(sourceId){
     const src = units[sourceId];
-    if(src && src.id==='khathia' && src!==u && src.hp>0 && (finalHp>0 || finalSp>0)){
-      const beforeSp = src.sp;
-      src.sp = Math.min(src.maxSp, src.sp + 2);
-      const gain = src.sp - beforeSp;
-      if(gain>0){
-        showGainFloat(src,0,gain);
-        appendLog(`${src.name} 的“老干部”触发：SP +${gain}`);
-        checkKhathiaFatigue(src);
+    if(src && src.passives && src.passives.includes('velmiraBloodyShovel') && src!==u && src.hp>0 && u.hp>0 && (finalHp>0 || finalSp>0)){
+      applyBleed(u, 1);
+    }
+    // Velmira 被动：被遗弃的动物 - 25%几率失去5点SP
+    if(src && src.passives && src.passives.includes('velmiraAbandoned') && src!==u && src.hp>0 && (finalHp>0 || finalSp>0)){
+      if(Math.random() < 0.25){
+        const spLoss = 5;
+        src.sp = Math.max(0, src.sp - spLoss);
+        showDamageFloat(src, 0, spLoss);
+        appendLog(`${src.name} 的"被遗弃的动物"触发：SP -${spLoss}`);
       }
+    }
+    // Velmira 被动：戏谑Buff - 打到人给自己2层灵活+1层暴力
+    if(src && src.status && src.status.mockeryStacks > 0 && u.hp>0 && (finalHp>0 || finalSp>0)){
+      addStatusStacks(src,'agileStacks',2,{label:'灵活', type:'buff'});
+      addStatusStacks(src,'violenceStacks',1,{label:'暴力', type:'buff'});
+      updateStatusStacks(src,'mockeryStacks', Math.max(0, src.status.mockeryStacks - 1), {label:'戏谑', type:'buff'});
+      appendLog(`${src.name} 的"戏谑"触发：获得2层灵活+1层暴力`);
+    }
+    // Velmira 被动：暴力Buff - 消耗10sp
+    if(src && src.status && src.status.violenceStacks > 0 && src._violenceActivated){
+      const spCost = 10;
+      src.sp = Math.max(0, src.sp - spCost);
+      updateStatusStacks(src,'violenceStacks', Math.max(0, src.status.violenceStacks - 1), {label:'暴力', type:'buff'});
+      src._violenceActivated = false;
+      appendLog(`${src.name} 的"暴力"消耗：SP -${spCost}`);
     }
   }
 
   handleSpCrashIfNeeded(u);
+  // Check Velmira HP threshold for battle end
+  if(u.id==='velmira' && u.hp <= 450 && u.hp > 0 && !u._thresholdTriggered){
+    u._thresholdTriggered = true;
+    setInteractionLocked(true);
+    setTimeout(async ()=>{
+      appendLog('战斗剧情触发！Velmira HP 降至 450！');
+      await showIntroLine('Velmira：哈...哈哈...好痛啊...但是...这感觉...');
+      await showIntroLine('Velmira：真是太棒了！我还想再玩一次～');
+      hideIntroDialog();
+      await sleep(1000);
+      appendLog('========================================');
+      appendLog('战斗结束！Velmira 体力达到阈值！');
+      appendLog('========================================');
+      setInteractionLocked(true);
+    }, 800);
+  }
 
   renderAll();
 }
@@ -2179,13 +2187,6 @@ function karmaGrip(u,target){
   }
   unitActed(u);
 }
-function markKhathiaSkillUsed(u){
-  if(!u) return;
-  // Mark that Khathia has used a skill this turn (for movement restriction)
-  if(u.id === 'khathia'){
-    u._usedSkillThisTurn = true;
-  }
-}
 function unitActed(u){
   if(!u) return;
   u.actionsThisTurn = Math.max(0, (u.actionsThisTurn||0)+1);
@@ -2240,14 +2241,9 @@ function karmaPunch(u,target){
   u.dmgDone += dmg; u.consecAttacks = (u.consecAttacks||0)+1; unitActed(u);
 }
 
-// —— Khathia 技能 ——
-function applyResentment(target, layers=1){
-  if(!target || target.hp<=0) return 0;
-  const stacks = addStatusStacks(target,'resentStacks', layers,{label:'怨念', type:'debuff'});
-  appendLog(`${target.name} 怨念层数 -> ${stacks}`);
-  return stacks;
-}
-function khathiaCollectTargets(cells){
+// —— Velmira 技能 ——
+// Helper function: collect enemy targets from cells
+function velmiraCollectTargets(cells){
   const set=new Set();
   const arr=[];
   for(const c of cells){
@@ -2259,153 +2255,170 @@ function khathiaCollectTargets(cells){
   }
   return arr;
 }
-function rotateDirCounterClockwise(dir){
-  switch(dir){
-    case 'up': return 'left';
-    case 'left': return 'down';
-    case 'down': return 'right';
-    case 'right': return 'up';
-    default: return dir;
-  }
+// Helper function: apply bleed stacks
+function applyBleed(target, layers=1){
+  if(!target || target.hp<=0) return 0;
+  const stacks = addStatusStacks(target,'bleed', layers,{label:'流血', type:'debuff'});
+  appendLog(`${target.name} 流血层数 -> ${stacks}`);
+  return stacks;
 }
-async function khathia_FleshBlade(u, dir){
-  markKhathiaSkillUsed(u);
-  const area = forwardRect2x2(u, dir, 2, 1);
-  if(area.length===0){ appendLog('血肉之刃：前方没有可以攻击的格子'); unitActed(u); return; }
-  await telegraphThenImpact(area);
-  const targets = khathiaCollectTargets(area);
-  if(targets.length){ cameraFocusOnCell(targets[0].r, targets[0].c); }
-  for(const target of targets){
-    damageUnit(target.id,15,0,`${u.name} 血肉之刃·第一段 命中 ${target.name}`, u.id,{skillFx:'khathia:血肉之刃'});
+// 铲击 (1步) - 面前1格挥舞铁锹造成15点伤害并恢复5点SP
+async function velmira_ShovelStrike(u, target){
+  if(!target || target.hp<=0){ appendLog('铲击：没有目标'); unitActed(u); return; }
+  await telegraphThenImpact([{r:target.r,c:target.c}]);
+  cameraFocusOnCell(target.r, target.c);
+  damageUnit(target.id,15,0,`${u.name} 铲击 命中 ${target.name}`, u.id,{skillFx:'velmira:铲击'});
+  const spGain = 5;
+  u.sp = Math.min(u.maxSp, u.sp + spGain);
+  showGainFloat(u,0,spGain);
+  appendLog(`${u.name} 恢复 ${spGain} SP`);
+  u.dmgDone += 15;
+  unitActed(u);
+}
+// 这很好玩啊～ (2步) - 多阶段攻击: 面前2格戳15伤害，然后3格戳30伤害，恢复5SP
+async function velmira_FunPlay(u, dir){
+  // Stage 1: Forward 2 cells, 15 damage
+  const area1 = range_forward_n(u, 2, dir);
+  if(area1.length===0){ appendLog('这很好玩啊～：前方没有目标'); unitActed(u); return; }
+  await telegraphThenImpact(area1);
+  const targets1 = velmiraCollectTargets(area1);
+  if(targets1.length){ cameraFocusOnCell(targets1[0].r, targets1[0].c); }
+  for(const target of targets1){
+    damageUnit(target.id,15,0,`${u.name} 这很好玩啊～·第一戳 命中 ${target.name}`, u.id,{skillFx:'velmira:这很好玩啊～'});
     u.dmgDone += 15;
   }
-  await stageMark(area);
-  for(const target of targets){
-    damageUnit(target.id,10,0,`${u.name} 血肉之刃·第二段 命中 ${target.name}`, u.id,{skillFx:'khathia:血肉之刃'});
-    applyResentment(target,1);
-    u.dmgDone += 10;
-  }
-  unitActed(u);
-}
-async function khathia_GrudgeClaw(u, dir){
-  markKhathiaSkillUsed(u);
-  const area = forwardRect2x2(u, dir, 2, 2);
-  if(area.length===0){ appendLog('怨念之爪：前方没有可以抓取的目标'); unitActed(u); return; }
-  await telegraphThenImpact(area);
-  const targets = khathiaCollectTargets(area);
-  if(targets.length){ cameraFocusOnCell(targets[0].r, targets[0].c); }
-  for(const target of targets){
-    damageUnit(target.id,10,15,`${u.name} 怨念之爪 撕裂 ${target.name}`, u.id,{skillFx:'khathia:怨念之爪'});
-    applyResentment(target,1);
-    u.dmgDone += 10;
-  }
-  unitActed(u);
-}
-async function khathia_BrutalSweep(u, dir){
-  markKhathiaSkillUsed(u);
-  const area = forwardRect2x2(u, dir, 4, 2);
-  if(area.length===0){ appendLog('蛮横横扫：范围内没有敌人'); unitActed(u); return; }
-  await telegraphThenImpact(area);
-  const targets = khathiaCollectTargets(area);
-  if(targets.length){ cameraFocusOnCell(targets[0].r, targets[0].c); }
-  for(const target of targets){
-    damageUnit(target.id,20,0,`${u.name} 蛮横横扫 命中 ${target.name}`, u.id,{skillFx:'khathia:蛮横横扫'});
-    addStatusStacks(target,'paralyzed',1,{label:'恐惧', type:'debuff'});
-    appendLog(`${target.name} 因恐惧下回合 -1 步`);
-    u.dmgDone += 20;
-  }
-  unitActed(u);
-}
-async function khathia_Overwork(u, dir){
-  markKhathiaSkillUsed(u);
-  // Stage 1: 2x2 area, 2 steps forward
-  const first = forwardRect2x2(u, dir, 2, 2);
-  if(first.length===0){ appendLog('能者多劳：前方没有空间'); unitActed(u); return; }
-  await telegraphThenImpact(first);
-  const firstTargets = khathiaCollectTargets(first);
-  if(firstTargets.length){ cameraFocusOnCell(firstTargets[0].r, firstTargets[0].c); }
-  for(const target of firstTargets){
-    damageUnit(target.id,10,15,`${u.name} 能者多劳·第一段 命中 ${target.name}`, u.id,{skillFx:'khathia:能者多劳'});
-    u.dmgDone += 10;
-  }
-  await stageMark(first);
+  await stageMark(area1);
   
-  // Stage 2: Same 2x2 area (attacks same cells again)
-  const second = forwardRect2x2(u, dir, 2, 2);
-  if(second.length>0){
-    await telegraphThenImpact(second);
-    const secondTargets = khathiaCollectTargets(second);
-    if(secondTargets.length){ cameraFocusOnCell(secondTargets[0].r, secondTargets[0].c); }
-    for(const target of secondTargets){
-      damageUnit(target.id,15,10,`${u.name} 能者多劳·第二段 横切 ${target.name}`, u.id,{skillFx:'khathia:能者多劳'});
-      applyResentment(target,1);
-      u.dmgDone += 15;
-    }
-    await stageMark(second);
-  }
-  
-  // Stage 3: Extended area from same position to map edge (width 2, depth to edge)
-  // Calculate maximum depth based on direction and position
-  // For 2x2 unit at (r,c), occupies rows r,r+1 and columns c,c+1
-  let maxDepth = 2;
-  if(dir === 'down'){
-    maxDepth = ROWS - (u.r + 1); // From bottom edge (r+2) to map bottom (ROWS)
-  } else if(dir === 'up'){
-    maxDepth = u.r - 1; // From top edge (r-1) to map top (1)
-  } else if(dir === 'left'){
-    maxDepth = u.c - 1; // From left edge (c-1) to map left (1)
-  } else if(dir === 'right'){
-    maxDepth = COLS - (u.c + 1); // From right edge (c+2) to map right (COLS)
-  }
-  
-  const third = forwardRect2x2(u, dir, 2, maxDepth);
-  if(third.length>0){
-    await telegraphThenImpact(third);
-    const thirdTargets = khathiaCollectTargets(third);
-    if(thirdTargets.length){ cameraFocusOnCell(thirdTargets[0].r, thirdTargets[0].c); }
-    for(const target of thirdTargets){
-      damageUnit(target.id,20,20,`${u.name} 能者多劳·终段 重砸 ${target.name}`, u.id,{skillFx:'khathia:能者多劳'});
-      applyResentment(target,1);
-      u.dmgDone += 20;
+  // Stage 2: Forward 3 cells, 30 damage
+  const area2 = range_forward_n(u, 3, dir);
+  if(area2.length>0){
+    await telegraphThenImpact(area2);
+    const targets2 = velmiraCollectTargets(area2);
+    if(targets2.length){ cameraFocusOnCell(targets2[0].r, targets2[0].c); }
+    for(const target of targets2){
+      damageUnit(target.id,30,0,`${u.name} 这很好玩啊～·第二戳 命中 ${target.name}`, u.id,{skillFx:'velmira:这很好玩啊～'});
+      u.dmgDone += 30;
     }
   }
+  
+  const spGain = 5;
+  u.sp = Math.min(u.maxSp, u.sp + spGain);
+  showGainFloat(u,0,spGain);
+  appendLog(`${u.name} 恢复 ${spGain} SP`);
   unitActed(u);
 }
-async function khathia_AgonyRoar(u){
-  markKhathiaSkillUsed(u);
-  const before = u.sp;
-  u.sp = u.maxSp;
-  syncSpBroken(u);
-  showGainFloat(u,0,u.sp-before);
-  appendLog(`${u.name} 痛苦咆哮：SP 全面恢复`);
-  const victims = Object.values(units).filter(t=> t.id!==u.id && t.hp>0 && (t.status?.resentStacks||0)>0);
-  if(victims.length===0){
-    appendLog('痛苦咆哮：场上没有怨念目标');
-    unitActed(u);
-    return;
-  }
-  for(const target of victims){
-    const stacks = target.status.resentStacks || 0;
-    updateStatusStacks(target,'resentStacks',0,{label:'怨念', type:'debuff'});
-    const hpDmg = stacks * 5;
-    const spDmg = stacks * 10;
-    if(hpDmg>0 || spDmg>0){
-      damageUnit(target.id,hpDmg,spDmg,`${u.name} 痛苦咆哮 撕裂 ${target.name}（怨念x${stacks}）`, u.id,{skillFx:'khathia:痛苦咆哮'});
+// 嬉耍 (1步) - 给自己增加一层灵活buff
+async function velmira_Play(u){
+  addStatusStacks(u,'agileStacks',1,{label:'灵活', type:'buff'});
+  appendLog(`${u.name} 获得 1 层灵活buff`);
+  unitActed(u);
+}
+// 抓到你啦！ (2步) - 多阶段：命中面前一排第一个目标造成15HP，拉到面前一格，压倒造成25HP+10SP+1层恐惧
+async function velmira_CaughtYou(u, dir){
+  const line = forwardLineAt(u, dir);
+  if(line.length===0){ appendLog('抓到你啦！：前方没有目标'); unitActed(u); return; }
+  
+  // Find first target in line
+  let target = null;
+  for(const cell of line){
+    const tu = getUnitAt(cell.r, cell.c);
+    if(tu && tu.side!=='enemy'){
+      target = tu;
+      break;
     }
   }
+  
+  if(!target){ appendLog('抓到你啦！：没有找到目标'); unitActed(u); return; }
+  
+  // Stage 1: Hit target for 15HP
+  await telegraphThenImpact([{r:target.r,c:target.c}]);
+  cameraFocusOnCell(target.r, target.c);
+  damageUnit(target.id,15,0,`${u.name} 抓到你啦！·抓取 命中 ${target.name}`, u.id,{skillFx:'velmira:抓到你啦！'});
+  u.dmgDone += 15;
+  
+  // Pull target to front of Velmira (if not immune)
+  if(!target.pullImmune){
+    const adj = range_adjacent(u);
+    if(adj.length>0){
+      const pullCell = adj.find(c=> c.dir===dir) || adj[0];
+      if(!getUnitAt(pullCell.r, pullCell.c)){
+        target.r = pullCell.r;
+        target.c = pullCell.c;
+        appendLog(`${target.name} 被拉到 ${u.name} 面前`);
+      }
+    }
+  }
+  
+  await stageMark([{r:target.r,c:target.c}]);
+  
+  // Stage 2: Pin down and stab for 25HP+10SP+fear
+  await telegraphThenImpact([{r:target.r,c:target.c}]);
+  damageUnit(target.id,25,10,`${u.name} 抓到你啦！·铲子插入 命中 ${target.name}`, u.id,{skillFx:'velmira:抓到你啦！'});
+  addStatusStacks(target,'paralyzed',1,{label:'恐惧', type:'debuff'});
+  appendLog(`${target.name} 因恐惧下回合 -1 步`);
+  u.dmgDone += 25;
+  
   unitActed(u);
 }
-async function khathia_FinalStruggle(u){
-  markKhathiaSkillUsed(u);
-  const area = range_square_n(u,5);
+// 摆头杀 (3步) - 多阶段：5x5范围35HP+20SP，然后反方向35HP(25%破甲)+2层流血
+async function velmira_HeadSwing(u){
+  const area = range_square_n(u,2);
   if(area.length===0){ unitActed(u); return; }
+  
+  // Stage 1: First swing 35HP+20SP
   await telegraphThenImpact(area);
-  const targets = khathiaCollectTargets(area);
-  if(targets.length){ cameraFocusOnCell(targets[0].r, targets[0].c); }
-  for(const target of targets){
-    damageUnit(target.id,50,70,`${u.name} 过多疲劳患者最终的挣扎 毁灭 ${target.name}`, u.id,{skillFx:'khathia:过多疲劳患者最终的挣扎'});
-    u.dmgDone += 50;
+  const targets1 = velmiraCollectTargets(area);
+  if(targets1.length){ cameraFocusOnCell(targets1[0].r, targets1[0].c); }
+  for(const target of targets1){
+    damageUnit(target.id,35,20,`${u.name} 摆头杀·正挥 命中 ${target.name}`, u.id,{skillFx:'velmira:摆头杀'});
+    u.dmgDone += 35;
   }
+  await stageMark(area);
+  
+  // Stage 2: Reverse swing 35HP(25% armor pen)+2 bleed
+  await telegraphThenImpact(area);
+  const targets2 = velmiraCollectTargets(area);
+  if(targets2.length){ cameraFocusOnCell(targets2[0].r, targets2[0].c); }
+  for(const target of targets2){
+    // Apply 25% armor penetration (simplified as 1.25x damage)
+    const dmg = Math.round(35 * 1.25);
+    damageUnit(target.id,dmg,0,`${u.name} 摆头杀·反挥 命中 ${target.name}`, u.id,{skillFx:'velmira:摆头杀'});
+    applyBleed(target,2);
+    u.dmgDone += dmg;
+  }
+  
+  unitActed(u);
+}
+// 被遗弃的动物 (4步) - 多阶段：5x5范围25HP+15SP，然后逆时针30HP+20SP（打到2+单位给自己1层戏谑）
+async function velmira_AbandonedAnimal(u){
+  const area = range_square_n(u,2);
+  if(area.length===0){ unitActed(u); return; }
+  
+  // Stage 1: First swing 25HP+15SP
+  await telegraphThenImpact(area);
+  const targets1 = velmiraCollectTargets(area);
+  if(targets1.length){ cameraFocusOnCell(targets1[0].r, targets1[0].c); }
+  for(const target of targets1){
+    damageUnit(target.id,25,15,`${u.name} 被遗弃的动物·第一挥 命中 ${target.name}`, u.id,{skillFx:'velmira:被遗弃的动物'});
+    u.dmgDone += 25;
+  }
+  await stageMark(area);
+  
+  // Stage 2: Counter-clockwise swing 30HP+20SP
+  await telegraphThenImpact(area);
+  const targets2 = velmiraCollectTargets(area);
+  if(targets2.length){ cameraFocusOnCell(targets2[0].r, targets2[0].c); }
+  for(const target of targets2){
+    damageUnit(target.id,30,20,`${u.name} 被遗弃的动物·逆挥 命中 ${target.name}`, u.id,{skillFx:'velmira:被遗弃的动物'});
+    u.dmgDone += 30;
+  }
+  
+  // If hit 2+ units in stage 2, gain 1 mockery buff
+  if(targets2.length >= 2){
+    addStatusStacks(u,'mockeryStacks',1,{label:'戏谑', type:'buff'});
+    appendLog(`${u.name} 获得 1 层戏谑buff`);
+  }
+  
   unitActed(u);
 }
 
@@ -2542,53 +2555,43 @@ function buildSkillFactoriesForUnit(u){
         {castMs:700}
       )}
     );
-  } else if(u.id==='khathia'){
+  } else if(u.id==='velmira'){
     F.push(
-      { key:'血肉之刃', prob:0.70, cond:()=>true, make:()=> skill('血肉之刃',1,'green','前方2x1：15HP+10HP，多段叠怨念',
-        (uu,aimDir)=> { const dir=aimDir||uu.facing; return forwardRect2x2(uu,dir,2,1).map(c=>({...c,dir})); },
-        async (uu,desc)=> { const dir = desc && desc.dir ? desc.dir : uu.facing; await khathia_FleshBlade(uu, dir); },
+      { key:'铲击', prob:0.70, cond:()=>true, make:()=> skill('铲击',1,'green','面前1格 15HP +5SP',
+        (uu,aimDir,aimCell)=> aimCell && mdist(uu,aimCell)===1? [{r:aimCell.r,c:aimCell.c,dir:cardinalDirFromDelta(aimCell.r-uu.r,aimCell.c-uu.c)}] : range_adjacent(uu),
+        (uu,target)=> velmira_ShovelStrike(uu,target),
         {},
-        {castMs:1100}
+        {castMs:900}
       )},
-      { key:'怨念之爪', prob:0.70, cond:()=>true, make:()=> skill('怨念之爪',1,'green','前方2x2：10HP+15SP并叠怨念',
-        (uu,aimDir)=> { const dir=aimDir||uu.facing; return forwardRect2x2(uu,dir,2,2).map(c=>({...c,dir})); },
-        async (uu,desc)=> { const dir = desc && desc.dir ? desc.dir : uu.facing; await khathia_GrudgeClaw(uu, dir); },
+      { key:'这很好玩啊～', prob:0.60, cond:()=>true, make:()=> skill('这很好玩啊～',2,'green','多段：面前2格戳15HP，然后3格戳30HP +5SP',
+        (uu,aimDir)=> aimDir? range_forward_n(uu,3,aimDir) : (()=>{const a=[]; for(const d in DIRS) range_forward_n(uu,3,d).forEach(x=>a.push(x)); return a;})(),
+        (uu,desc)=> velmira_FunPlay(uu,desc.dir||uu.facing),
+        {aoe:true},
+        {castMs:1200}
+      )},
+      { key:'嬉耍', prob:0.50, cond:()=>true, make:()=> skill('嬉耍',1,'pink','给自己增加一层灵活buff',
+        (uu)=>[{r:uu.r,c:uu.c,dir:uu.facing}],
+        (uu)=> velmira_Play(uu),
         {},
-        {castMs:1100}
+        {castMs:700}
       )},
-      { key:'蛮横横扫', prob:0.60, cond:()=>true, make:()=> skill('蛮横横扫',2,'red','前方4x2：20HP并附恐惧',
-        (uu,aimDir)=> { const dir=aimDir||uu.facing; return forwardRect2x2(uu,dir,4,2).map(c=>({...c,dir})); },
-        async (uu,desc)=> { const dir = desc && desc.dir ? desc.dir : uu.facing; await khathia_BrutalSweep(uu, dir); },
+      { key:'抓到你啦！', prob:0.40, cond:()=>true, make:()=> skill('抓到你啦！',2,'red','多段：命中面前一排第一个目标15HP，拉近，25HP+10SP+恐惧',
+        (uu,aimDir)=> aimDir? range_line(uu,aimDir) : (()=>{const a=[]; for(const d in DIRS) range_line(uu,d).forEach(x=>a.push(x)); return a;})(),
+        (uu,desc)=> velmira_CaughtYou(uu,desc.dir||uu.facing),
         {aoe:true},
         {castMs:1400}
       )},
-      { key:'能者多劳', prob:0.45, cond:()=>true, make:()=> skill('能者多劳',2,'red','多段：前2x2→同区→至边缘，叠怨念并削SP',
-        (uu,aimDir)=> { 
-          const dir=aimDir||uu.facing; 
-          // Show the maximum range (stage 3) for targeting
-          // For 2x2 unit, calculate depth to map edge in attack direction
-          let maxDepth = 2;
-          if(dir === 'down'){ maxDepth = ROWS - (uu.r + 1); }
-          else if(dir === 'up'){ maxDepth = uu.r - 1; }
-          else if(dir === 'left'){ maxDepth = uu.c - 1; }
-          else if(dir === 'right'){ maxDepth = COLS - (uu.c + 1); }
-          return forwardRect2x2(uu,dir,2,maxDepth).map(c=>({...c,dir})); 
-        },
-        async (uu,desc)=> { const dir = desc && desc.dir ? desc.dir : uu.facing; await khathia_Overwork(uu, dir); },
+      { key:'摆头杀', prob:0.30, cond:()=>true, make:()=> skill('摆头杀',3,'red','5x5：35HP+20SP，反向35HP(25%破甲)+2层流血',
+        (uu)=> range_square_n(uu,2).map(c=>({...c,dir:uu.facing})),
+        (uu)=> velmira_HeadSwing(uu),
         {aoe:true},
-        {castMs:1900}
+        {castMs:1600}
       )},
-      { key:'痛苦咆哮', prob:0.35, cond:()=>true, make:()=> skill('痛苦咆哮',2,'red','恢复自身SP并清算所有怨念目标',
-        (uu)=>[{r:uu.r,c:uu.c,dir:uu.facing}],
-        async (uu)=> await khathia_AgonyRoar(uu),
-        {},
-        {castMs:1500}
-      )},
-      { key:'过多疲劳患者最终的挣扎', prob:0.30, cond:()=>true, make:()=> skill('过多疲劳患者最终的挣扎',3,'red','以自身为中心大范围：50HP+70SP',
-        (uu)=> range_square_n(uu,5).map(c=>({...c,dir:uu.facing})),
-        async (uu)=> await khathia_FinalStruggle(uu),
+      { key:'被遗弃的动物', prob:0.25, cond:()=>true, make:()=> skill('被遗弃的动物',4,'red','5x5：25HP+15SP，逆时针30HP+20SP（2+目标给自己1层戏谑）',
+        (uu)=> range_square_n(uu,2).map(c=>({...c,dir:uu.facing})),
+        (uu)=> velmira_AbandonedAnimal(uu),
         {aoe:true},
-        {castMs:2200}
+        {castMs:1800}
       )}
     );
   }
@@ -2931,6 +2934,9 @@ function summarizeNegatives(u){
   if(u.status.jixueStacks>0) parts.push(`鸡血x${u.status.jixueStacks}`);
   if(u.status.dependStacks>0) parts.push(`依赖x${u.status.dependStacks}`);
   if(u.status.resentStacks>0) parts.push(`怨念x${u.status.resentStacks}`);
+  if(u.status.agileStacks>0) parts.push(`灵活x${u.status.agileStacks}`);
+  if(u.status.mockeryStacks>0) parts.push(`戏谑x${u.status.mockeryStacks}`);
+  if(u.status.violenceStacks>0) parts.push(`暴力x${u.status.violenceStacks}`);
   if(u._spBroken) parts.push(`SP崩溃`);
   if(u._spCrashVuln) parts.push('SP崩溃易伤');
   if(u._stanceType && u._stanceTurns>0){
@@ -2947,7 +2953,7 @@ function renderStatus(){
     el.innerHTML=`<strong>${u.name}</strong> HP:${u.hp}/${u.maxHp} SP:${u.sp}/${u.maxSp} ${summarizeNegatives(u)}`;
     partyStatus.appendChild(el);
   }
-  const enemyWrap=document.createElement('div'); enemyWrap.style.marginTop='10px'; enemyWrap.innerHTML='<strong>敌方（疲惫的极限）</strong>';
+  const enemyWrap=document.createElement('div'); enemyWrap.style.marginTop='10px'; enemyWrap.innerHTML='<strong>敌方（被遗弃的动物（上））</strong>';
   const enemyUnits = Object.values(units).filter(u=>u.side==='enemy' && u.hp>0);
   for(const u of enemyUnits){
     const el=document.createElement('div'); el.className='partyRow small';
@@ -3661,14 +3667,6 @@ async function exhaustEnemySteps(){
       // 1) 尝试技能
       let didAct = false;
       const candidates = buildSkillCandidates(en);
-      if(candidates.length===0 && en.id==='khathia' && !en._designPenaltyTriggered && typeof en.maxMovePerTurn==='number' && (en.stepsMovedThisTurn||0) >= en.maxMovePerTurn){
-        applyKhathiaDesignPenalty();
-        en._designPenaltyTriggered = true;
-        if(enemySteps>0){ enemySteps = Math.max(0, enemySteps - 1); updateStepsUI(); }
-        progressedThisRound = true;
-        await aiAwait(140);
-        continue;
-      }
       if(candidates.length>0){
         didAct = await execEnemySkillCandidate(en, candidates[0]);
         if(didAct){
@@ -3837,6 +3835,12 @@ document.addEventListener('DOMContentLoaded', ()=>{
   startCameraLoop();
 
   // 掩体（不可进入）
+  // 被遗弃的动物（上）地图：两个3x3掩体
+  // 左下角为(1,1)，所以需要转换坐标
+  // 左侧掩体：(2,6) (2,7) (2,8) (3,6) (3,7) (3,8) (4,6) (4,7) (4,8)
+  addCoverRectBL(1, 5, 3, 7);
+  // 右侧掩体：(12,6) (12,7) (12,8) (13,6) (13,7) (13,8) (14,6) (14,7) (14,8)
+  addCoverRectBL(11, 5, 13, 7);
   injectFXStyles();
 
   // 起手手牌
@@ -3857,9 +3861,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
   window.addEventListener('load', ()=> refreshLargeOverlays());
 
-  appendLog('疲惫的极限：地图 10x20，全场无额外掩体。');
-  appendLog('Khathia 需叠满4层眩晕才会进入眩晕状态，SP 崩溃将触发特殊疲劳崩溃。');
-  appendLog('怨念会在回合开始时吞噬目标的 5% SP，记得及时清除。');
+  appendLog('被遗弃的动物（上）：地图 15x11，两个3x3掩体。');
+  appendLog('Velmira 需叠满3层眩晕才会进入眩晕状态，HP降至450触发剧情。');
+  appendLog('流血会在回合开始时减少目标 5% HP，Velmira 的每次攻击都会施加流血。');
 
   const endTurnBtn=document.getElementById('endTurnBtn');
   if(endTurnBtn) endTurnBtn.addEventListener('click', ()=>{ if(interactionLocked) return; endTurn(); });
